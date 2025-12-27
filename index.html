@@ -1,0 +1,425 @@
+
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chronos 數位觀課儀表板</title>
+    <!-- Core: React, ReactDOM, Babel -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Styling: Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Noto Sans TC', sans-serif;
+            background-color: #020617; /* slate-950 */
+            color: #f8fafc;
+            overflow-x: hidden;
+            user-select: none;
+        }
+        @keyframes rotate-dashed {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        .animate-rotate-dashed {
+            animation: rotate-dashed 10s linear infinite;
+        }
+        .glass {
+            background: rgba(15, 23, 42, 0.6);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        @keyframes pulse-amber {
+            0%, 100% { opacity: 1; border-color: rgba(245, 158, 11, 0.3); }
+            50% { opacity: 0.7; border-color: rgba(245, 158, 11, 0.8); }
+        }
+        .reminder-pulse {
+            animation: pulse-amber 2s infinite;
+        }
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+        /* Mobile touch optimization */
+        .touch-none {
+            touch-action: none;
+        }
+    </style>
+<script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@^19.2.3",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "react/": "https://esm.sh/react@^19.2.3/"
+  }
+}
+</script>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useCallback } = React;
+
+        // --- Constants ---
+        const SUBJECTS = ['國文', '英文', '數學', '物理', '化學', '生物', '地科', '歷史', '地理', '公民', '資訊', '體育', '藝術'];
+
+        const TEACHING_MODES = [
+            { id: 'lecture', label: '講述教學', color: 'amber' },
+            { id: 'discussion', label: '小組討論', color: 'amber' },
+            { id: 'practice', label: '實作/演算', color: 'amber' },
+            { id: 'digital', label: '數位運用', color: 'amber' },
+        ];
+
+        const TEACHING_ACTIONS = [
+            { id: 'encourage', label: '正向鼓勵', icon: '✨' },
+            { id: 'regulate', label: '糾正規範', icon: '🛡️' },
+            { id: 'open_q', label: '開放提問', icon: '❓' },
+            { id: 'closed_q', label: '封閉提問', icon: '📍' },
+            { id: 'patrol', label: '巡視走動', icon: '🚶' },
+        ];
+
+        const ENGAGEMENT_CONFIG = {
+            high: { label: '高', color: 'text-green-400', bg: 'bg-green-400' },
+            mid: { label: '中', color: 'text-yellow-400', bg: 'bg-yellow-400' },
+            low: { label: '低', color: 'text-red-400', bg: 'bg-red-400' },
+        };
+
+        // --- Components: Icons ---
+        const StartIcon = () => (
+            <svg width="60" height="60" viewBox="0 0 100 100" className="drop-shadow-lg">
+                <defs>
+                    <linearGradient id="amberGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" style={{ stopColor: '#f59e0b', stopOpacity: 1 }} />
+                        <stop offset="100%" style={{ stopColor: '#d97706', stopOpacity: 1 }} />
+                    </linearGradient>
+                </defs>
+                <circle cx="50" cy="50" r="45" fill="none" stroke="#f59e0b" strokeWidth="1" strokeDasharray="4 4" className="animate-rotate-dashed" />
+                <path d="M40 30 L75 50 L40 70 Z" fill="url(#amberGradient)" stroke="#fef3c7" strokeWidth="1" />
+            </svg>
+        );
+
+        const StopIcon = () => (
+            <svg width="60" height="60" viewBox="0 0 100 100" className="drop-shadow-lg">
+                <defs>
+                    <linearGradient id="rustGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" style={{ stopColor: '#b91c1c', stopOpacity: 1 }} />
+                        <stop offset="100%" style={{ stopColor: '#7f1d1d', stopOpacity: 1 }} />
+                    </linearGradient>
+                </defs>
+                <rect x="30" y="30" width="40" height="40" fill="url(#rustGradient)" stroke="#fecaca" strokeWidth="2" rx="4" />
+                <circle cx="50" cy="50" r="45" fill="none" stroke="#7f1d1d" strokeWidth="2" strokeDasharray="8 4" />
+            </svg>
+        );
+
+        // --- Main App Component ---
+        const App = () => {
+            const [isActive, setIsActive] = useState(false);
+            const [sessionDuration, setSessionDuration] = useState(0);
+            const [currentSystemTime, setCurrentSystemTime] = useState(new Date().toLocaleTimeString('zh-TW', { hour12: false }));
+            const [subject, setSubject] = useState(SUBJECTS[0]);
+
+            const [activeMode, setActiveMode] = useState(null);
+            const [modeTimes, setModeTimes] = useState({ lecture: 0, discussion: 0, practice: 0, digital: 0 });
+
+            const [activeAction, setActiveAction] = useState(null);
+            const [actionCounts, setActionCounts] = useState({ encourage: 0, regulate: 0, open_q: 0, closed_q: 0, patrol: 0 });
+            const [actionDurations, setActionDurations] = useState({ encourage: 0, regulate: 0, open_q: 0, closed_q: 0, patrol: 0 });
+
+            const [logs, setLogs] = useState([]);
+            const [engagement, setEngagement] = useState('mid');
+            const [note, setNote] = useState('');
+            const [lastInteractionTime, setLastInteractionTime] = useState(Date.now());
+            const [showReminder, setShowReminder] = useState(false);
+            const [showReport, setShowReport] = useState(false);
+
+            const intervalRef = useRef(null);
+            const pressTimerRef = useRef(null);
+            const currentTimingDurationRef = useRef(0);
+
+            useEffect(() => {
+                const t = setInterval(() => {
+                    setCurrentSystemTime(new Date().toLocaleTimeString('zh-TW', { hour12: false }));
+                }, 1000);
+                return () => clearInterval(t);
+            }, []);
+
+            useEffect(() => {
+                if (isActive) {
+                    intervalRef.current = setInterval(() => {
+                        setSessionDuration(prev => prev + 1);
+                        if (activeMode) setModeTimes(prev => ({ ...prev, [activeMode]: prev[activeMode] + 1 }));
+                        if (activeAction) {
+                            currentTimingDurationRef.current += 1;
+                            setActionDurations(prev => ({ ...prev, [activeAction]: prev[activeAction] + 1 }));
+                        }
+                        if (Date.now() - lastInteractionTime > 300000) setShowReminder(true);
+                        else setShowReminder(false);
+                    }, 1000);
+                } else {
+                    if (intervalRef.current) clearInterval(intervalRef.current);
+                }
+                return () => clearInterval(intervalRef.current);
+            }, [isActive, activeMode, activeAction, lastInteractionTime]);
+
+            const addLog = useCallback((label, type, value) => {
+                const newLog = {
+                    id: Math.random().toString(36).substring(7),
+                    timestamp: new Date().toLocaleTimeString('zh-TW', { hour12: false }),
+                    label, type, value
+                };
+                setLogs(prev => [newLog, ...prev]);
+                setLastInteractionTime(Date.now());
+                setShowReminder(false);
+            }, []);
+
+            const formatTime = (seconds) => {
+                const m = Math.floor(seconds / 60);
+                const s = seconds % 60;
+                return `${m}:${s.toString().padStart(2, '0')}`;
+            };
+
+            const handleToggleSession = () => {
+                if (!isActive) {
+                    setIsActive(true);
+                    addLog('開始觀課', 'note');
+                } else {
+                    setIsActive(false);
+                    setActiveMode(null);
+                    setActiveAction(null);
+                    addLog('結束觀課', 'note');
+                    setShowReport(true);
+                }
+            };
+
+            const toggleMode = (modeId) => {
+                if (!isActive) return;
+                if (activeMode === modeId) {
+                    setActiveMode(null);
+                    addLog(`停止模式: ${TEACHING_MODES.find(m => m.id === modeId).label}`, 'mode');
+                } else {
+                    setActiveMode(modeId);
+                    addLog(`啟動模式: ${TEACHING_MODES.find(m => m.id === modeId).label}`, 'mode');
+                }
+            };
+
+            const handleActionStart = (actionId) => {
+                if (!isActive) return;
+                currentTimingDurationRef.current = 0;
+                pressTimerRef.current = setTimeout(() => {
+                    setActiveAction(actionId);
+                    if ('vibrate' in navigator) navigator.vibrate(50);
+                }, 500);
+            };
+
+            const handleActionEnd = (actionId) => {
+                if (!isActive) return;
+                if (pressTimerRef.current) clearTimeout(pressTimerRef.current);
+                if (activeAction === actionId) {
+                    addLog(`行為計時: ${TEACHING_ACTIONS.find(a => a.id === actionId).label} (${formatTime(currentTimingDurationRef.current)})`, 'action');
+                    setActiveAction(null);
+                } else {
+                    setActionCounts(prev => ({ ...prev, [actionId]: prev[actionId] + 1 }));
+                    addLog(`行為計數: ${TEACHING_ACTIONS.find(a => a.id === actionId).label}`, 'action');
+                }
+            };
+
+            const generateReportText = () => {
+                let text = `CHRONOS 數位觀課結算報告\n====================================\n`;
+                text += `科目: ${subject}\n日期: ${new Date().toLocaleDateString('zh-TW')}\n授課總時長: ${formatTime(sessionDuration)}\n====================================\n\n`;
+                text += `[教學模式分布]\n`;
+                TEACHING_MODES.forEach(m => {
+                    const pct = sessionDuration > 0 ? ((modeTimes[m.id] / sessionDuration) * 100).toFixed(1) : 0;
+                    text += `- ${m.label.padEnd(8)}: ${formatTime(modeTimes[m.id])} (${pct}%)\n`;
+                });
+                text += `\n[教學行為統計]\n`;
+                TEACHING_ACTIONS.forEach(a => {
+                    text += `- ${a.label.padEnd(8)}: 計次 ${actionCounts[a.id]} 次 | 總時數 ${formatTime(actionDurations[a.id])}\n`;
+                });
+                text += `\n[詳細紀錄歷程]\n------------------------------------\n`;
+                logs.slice().reverse().forEach(l => { text += `[${l.timestamp}] ${l.label}\n`; });
+                return text;
+            };
+
+            const copyToClipboard = () => {
+                navigator.clipboard.writeText(generateReportText());
+                alert('已複製到剪貼簿');
+            };
+
+            const downloadTxt = () => {
+                const blob = new Blob(["\uFEFF" + generateReportText()], { type: 'text/plain;charset=utf-8' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `Chronos_Report_${subject}_${new Date().toISOString().split('T')[0]}.txt`;
+                link.click();
+            };
+
+            return (
+                <div className="min-h-screen flex flex-col bg-slate-950 text-slate-100 overflow-hidden">
+                    {/* Header */}
+                    <header className="glass sticky top-0 z-40 px-4 py-3 flex items-center justify-between border-b border-white/10">
+                        <div className="flex items-center gap-4">
+                            <h1 className="text-xl font-bold bg-gradient-to-r from-amber-400 to-amber-600 bg-clip-text text-transparent hidden md:block">CHRONOS</h1>
+                            <select className="bg-slate-900 border border-white/20 rounded px-2 py-1 text-sm outline-none" value={subject} onChange={e => setSubject(e.target.value)}>
+                                {SUBJECTS.map(s => <option key={s} value={s}>{s}</option>)}
+                            </select>
+                        </div>
+                        <div className="flex flex-col items-center">
+                            <span className="text-[10px] text-slate-500 uppercase tracking-widest">Session Timer</span>
+                            <span className="text-2xl font-mono text-amber-500 drop-shadow-[0_0_8px_rgba(245,158,11,0.5)]">{formatTime(sessionDuration)}</span>
+                        </div>
+                        <div className="flex items-center gap-4">
+                            <div className="hidden sm:block text-right">
+                                <div className="text-[10px] text-slate-500 uppercase">System</div>
+                                <div className="text-sm font-mono">{currentSystemTime}</div>
+                            </div>
+                            <button onClick={handleToggleSession} className="active:scale-95 transition-transform">
+                                {isActive ? <StopIcon /> : <StartIcon />}
+                            </button>
+                        </div>
+                    </header>
+
+                    {/* Main Content */}
+                    <main className="flex-1 overflow-y-auto p-4 md:p-6 grid grid-cols-1 md:grid-cols-12 gap-6">
+                        {/* States */}
+                        <div className="md:col-span-4 space-y-4">
+                            <h2 className="text-amber-500/80 text-xs font-bold tracking-[0.2em] uppercase flex items-center gap-2">
+                                <div className="w-1.5 h-1.5 bg-amber-500 rounded-full" /> 教學模式 STATES
+                            </h2>
+                            <div className="grid grid-cols-2 md:grid-cols-1 gap-3">
+                                {TEACHING_MODES.map(mode => (
+                                    <button key={mode.id} disabled={!isActive} onClick={() => toggleMode(mode.id)} className={`relative p-4 rounded-xl border transition-all flex flex-col items-center justify-center gap-2 h-24 ${activeMode === mode.id ? 'bg-amber-500/20 border-amber-500' : 'bg-slate-900/40 border-white/5 opacity-70'}`}>
+                                        <div className="text-sm">{mode.label}</div>
+                                        <div className="text-xl font-mono">{formatTime(modeTimes[mode.id])}</div>
+                                        {activeMode === mode.id && <div className="absolute bottom-0 left-0 w-full h-1 bg-amber-500 animate-pulse" />}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Actions */}
+                        <div className="md:col-span-5 space-y-4">
+                            <h2 className="text-amber-500/80 text-xs font-bold tracking-[0.2em] uppercase flex items-center gap-2">
+                                <div className="w-1.5 h-1.5 bg-amber-500 rounded-full" /> 教學行為 ACTIONS
+                            </h2>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                                {TEACHING_ACTIONS.map(a => (
+                                    <button key={a.id} disabled={!isActive} onMouseDown={() => handleActionStart(a.id)} onMouseUp={() => handleActionEnd(a.id)} onTouchStart={e => {e.preventDefault(); handleActionStart(a.id);}} onTouchEnd={e => {e.preventDefault(); handleActionEnd(a.id);}} className={`relative p-4 rounded-xl border flex flex-col items-center gap-1 active:scale-95 transition-all touch-none ${activeAction === a.id ? 'bg-amber-500/40 border-amber-400 scale-105' : 'bg-slate-900/40 border-white/5'}`}>
+                                        <div className="text-2xl">{a.icon}</div>
+                                        <div className="text-[11px] text-slate-400">{a.label}</div>
+                                        <div className="flex gap-2 text-[10px] font-mono mt-1 pt-1 border-t border-white/5 w-full justify-center">
+                                            <span>#{actionCounts[a.id]}</span>
+                                            <span className="text-amber-600/60">{formatTime(actionDurations[a.id])}</span>
+                                        </div>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Log */}
+                        <div className="md:col-span-3 flex flex-col space-y-4">
+                            <h2 className="text-amber-500/80 text-xs font-bold tracking-[0.2em] uppercase flex items-center gap-2">
+                                <div className="w-1.5 h-1.5 bg-amber-500 rounded-full" /> 即時紀錄 LOG
+                            </h2>
+                            <div className="flex-1 bg-slate-900/30 border border-white/5 rounded-xl overflow-y-auto p-2 no-scrollbar h-[300px] md:h-auto">
+                                {logs.length === 0 ? <div className="h-full flex items-center justify-center text-slate-600 text-xs italic">尚未紀錄</div> : logs.map(l => (
+                                    <div key={l.id} className="text-[11px] bg-slate-800/40 p-2 rounded mb-2 border border-white/5 flex gap-2">
+                                        <span className="text-amber-600/80 font-mono">{l.timestamp}</span>
+                                        <span className="text-slate-300">{l.label}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </main>
+
+                    {/* Footer */}
+                    <footer className={`glass px-4 py-3 border-t transition-all ${showReminder ? 'reminder-pulse border-amber-500' : 'border-white/10'}`}>
+                        <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center gap-4">
+                            <div className="flex items-center gap-3 w-full md:w-auto">
+                                <span className="text-[10px] font-bold text-slate-400">專注度:</span>
+                                <div className="flex-1 md:w-48 bg-slate-900 p-1 rounded-lg flex border border-white/5">
+                                    {['low', 'mid', 'high'].map(l => (
+                                        <button key={l} onClick={() => { setEngagement(l); addLog(`專注度: ${ENGAGEMENT_CONFIG[l].label}`, 'engagement'); }} className={`flex-1 py-1 text-xs rounded transition-all ${engagement === l ? `${ENGAGEMENT_CONFIG[l].bg} text-slate-950 font-bold` : 'text-slate-500'}`}>
+                                            {ENGAGEMENT_CONFIG[l].label}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                            <div className="flex-1 flex gap-2 w-full">
+                                <input type="text" placeholder="輸入紀錄筆記..." value={note} onChange={e => setNote(e.target.value)} onKeyDown={e => e.key === 'Enter' && (isActive && note.trim() && (addLog(`筆記: ${note}`, 'note'), setNote('')))} className="flex-1 bg-slate-900 border border-white/10 rounded-full px-4 py-2 text-sm outline-none focus:border-amber-500" />
+                                <button onClick={() => { addLog(`筆記: ${note}`, 'note'); setNote(''); }} disabled={!isActive || !note.trim()} className="bg-amber-600 text-slate-950 px-6 py-2 rounded-full text-xs font-bold disabled:opacity-20">發送</button>
+                            </div>
+                        </div>
+                    </footer>
+
+                    {/* Report Modal */}
+                    {showReport && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                            <div className="absolute inset-0 bg-slate-950/90 backdrop-blur-sm" onClick={() => setShowReport(false)} />
+                            <div className="relative glass w-full max-w-2xl rounded-3xl overflow-hidden flex flex-col border border-amber-500/20 max-h-[90vh]">
+                                <div className="p-6 border-b border-white/10 flex justify-between items-center bg-amber-500/10">
+                                    <h2 className="text-xl font-bold text-amber-500">觀課結算報告</h2>
+                                    <button onClick={() => setShowReport(false)} className="text-2xl">&times;</button>
+                                </div>
+                                <div className="flex-1 overflow-y-auto p-6 space-y-6 no-scrollbar">
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="bg-slate-900/50 p-4 rounded-xl border border-white/5">
+                                            <div className="text-[10px] text-slate-500">科目</div>
+                                            <div className="font-bold">{subject}</div>
+                                        </div>
+                                        <div className="bg-slate-900/50 p-4 rounded-xl border border-white/5">
+                                            <div className="text-[10px] text-slate-500">總時長</div>
+                                            <div className="font-bold font-mono text-amber-500">{formatTime(sessionDuration)}</div>
+                                        </div>
+                                    </div>
+                                    <div className="space-y-3">
+                                        <h3 className="text-xs font-bold text-slate-400">教學模式分布</h3>
+                                        {TEACHING_MODES.map(m => {
+                                            const pct = sessionDuration > 0 ? (modeTimes[m.id] / sessionDuration) * 100 : 0;
+                                            return (
+                                                <div key={m.id}>
+                                                    <div className="flex justify-between text-[10px] mb-1"><span>{m.label}</span><span>{pct.toFixed(1)}%</span></div>
+                                                    <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden border border-white/5">
+                                                        <div className="bg-amber-500 h-full transition-all duration-1000" style={{ width: `${pct}%` }} />
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                    <div className="space-y-2">
+                                        <h3 className="text-xs font-bold text-slate-400">行為統計</h3>
+                                        <div className="grid gap-2">
+                                            {TEACHING_ACTIONS.map(a => (
+                                                <div key={a.id} className="bg-slate-900/30 p-3 rounded-lg flex justify-between items-center text-xs">
+                                                    <span>{a.icon} {a.label}</span>
+                                                    <span className="font-mono text-amber-500">{actionCounts[a.id]} 次 | {formatTime(actionDurations[a.id])}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="p-6 bg-slate-900/50 flex gap-3">
+                                    <button onClick={copyToClipboard} className="flex-1 py-3 rounded-xl bg-slate-800 text-white font-bold text-sm">複製紀錄</button>
+                                    <button onClick={downloadTxt} className="flex-1 py-3 rounded-xl bg-amber-600 text-slate-950 font-bold text-sm">下載報告</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
